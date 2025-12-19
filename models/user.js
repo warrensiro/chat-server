@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const bcrypt = require("bcryptjs");
 
 const userSchema = new mongoose.Schema({
   firstName: {
@@ -46,6 +47,11 @@ const userSchema = new mongoose.Schema({
   },
 });
 
+userSchema.methods.correctPassword = async function (
+  candidatePassword, userPassword
+) {
+  return await bcrypt.compare(candidatePassword, userPassword)
+}
 
 const User = new mongoose.model("User", userSchema)
 module.exports = User // what's in the DB
