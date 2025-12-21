@@ -11,21 +11,41 @@ const signToken = (userId) => {
 exports.register = async (req, res, next) => {
   const { firstName, lastName, email, password } = req.body;
 
+  const filteredBody = filterObj(
+    req.body,
+    "firstName",
+    "lastName",
+    "password",
+    "email"
+  );
+
   // check if user is already in the db
-  const existing_user = await User.findOne({ email: email})
+  const existing_user = await User.findOne({ email: email });
 
   if (existing_user && existing_user.verified) {
     res.status(400).json({
       status: "error",
       message: "User with that email already exists",
-    })
-  }
-
-  else if (existing_user && !existing_user.verified) {
+    });
+  } else if (existing_user) {
     // update the existing unverified user
-    await User.findOneAndUpdate({ email: email }, {...req.body })
+    await User.findOneAndUpdate({ email: email }, filteredBody, {
+      new: true,
+      validateModifiedOnly: true,
+    }); // this is to update existing user
+
+    // generate otp and send email
+    req.userId = existing_user._id;
+    next();
+  } else {
+    // create new user
+    const new_user = await User.create(filteredBody);
+
+    // generate otp and send email
+    req.userId = new_user._id;
+    next();
   }
-}
+};
 
 // login controller
 exports.login = async (req, res, next) => {
