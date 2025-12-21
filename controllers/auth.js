@@ -7,6 +7,12 @@ const signToken = (userId) => {
   return jwt.sign({ userId }, process.env.JWT_SECRET);
 };
 
+// register controller/endpoint
+exports.register = async (req, res, next) => {
+  const { name, email, password, passwordConfirm } = req.body
+  
+}
+
 // login controller
 exports.login = async (req, res, next) => {
   const { email, password } = req.body;
