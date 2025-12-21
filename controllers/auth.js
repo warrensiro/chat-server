@@ -9,8 +9,22 @@ const signToken = (userId) => {
 
 // register controller/endpoint
 exports.register = async (req, res, next) => {
-  const { name, email, password, passwordConfirm } = req.body
-  
+  const { firstName, lastName, email, password } = req.body;
+
+  // check if user is already in the db
+  const existing_user = await User.findOne({ email: email})
+
+  if (existing_user && existing_user.verified) {
+    res.status(400).json({
+      status: "error",
+      message: "User with that email already exists",
+    })
+  }
+
+  else if (existing_user && !existing_user.verified) {
+    // update the existing unverified user
+    await User.findOneAndUpdate({ email: email }, {...req.body })
+  }
 }
 
 // login controller
