@@ -140,3 +140,15 @@ exports.login = async (req, res, next) => {
     token,
   });
 };
+
+// forgot password controller
+exports.forgotPassword = async (req, res, next) => {
+  const { email } = req.body;
+
+
+}
+
+// reset password controller
+exports.resetPassword = async (req, res, next) => {
+  
+}
