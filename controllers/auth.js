@@ -141,14 +141,42 @@ exports.login = async (req, res, next) => {
   });
 };
 
+// protect middleware
+exports.protect = async (req, res, next) => {};
+
 // forgot password controller
 exports.forgotPassword = async (req, res, next) => {
-  const { email } = req.body;
+  const user = await User.findOne({ email: req.body.email });
 
+  if (!user) {
+    res.status(400).json({
+      status: "error",
+      message: "No user with this email",
+    });
+  }
 
-}
+  // generate random reset token
+  const resetToken = user.createPasswordResetToken();
+
+  const resetURL = `https://siro.com/auth/reset-password/?code=${resetToken}`;
+  try {
+    // send mail here
+    res.status(200).json({
+      status: "success",
+      message: "Reset password link sent to mail",
+    });
+  } catch (error) {
+    user.passwordResetToken = undefined;
+    user.passwordResetExpires = undefined;
+
+    await user.save({ validateBeforeSave: false });
+
+    res.status(500).json({
+      status: "error",
+      message: "There was an error sending the email. Try again later.",
+    });
+  }
+};
 
 // reset password controller
-exports.resetPassword = async (req, res, next) => {
-  
-}
+exports.resetPassword = async (req, res, next) => {};
