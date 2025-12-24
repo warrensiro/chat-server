@@ -143,7 +143,30 @@ exports.login = async (req, res, next) => {
 };
 
 // protect middleware
-exports.protect = async (req, res, next) => {};
+exports.protect = async (req, res, next) => {
+  // getting token and check if it's there
+  let token
+
+  if (req.headers.authorization && req.headers.authorization.startsWith("Bearer")) {
+    token = req.headers.authorization.split(" ")[1];
+
+
+  }
+  else if (req.cookies.jwt) {
+    token = req.cookies.jwt
+  }
+
+  else {
+    req.status(400).json({
+      status: "error",
+      message: "You ain't logged in!"
+    })
+
+    return;
+  }
+
+  // verification token
+};
 
 // forgot password controller
 exports.forgotPassword = async (req, res, next) => {
@@ -154,6 +177,8 @@ exports.forgotPassword = async (req, res, next) => {
       status: "error",
       message: "No user with this email",
     });
+
+    return;
   }
 
   // generate random reset token
@@ -197,6 +222,8 @@ exports.resetPassword = async (req, res, next) => {
       status: "error",
       message: "Token is invalid or has expired",
     });
+
+    return;
   }
 
   user.password = req.body.password;
