@@ -95,5 +95,9 @@ userSchema.methods.createPasswordResetToken = function () {
   return resetToken;
 };
 
+userSchema.methods.changedPasswordAfter = function (timestamp) {
+  return timestamp < this.passwordChangedAt;
+}
+
 const User = new mongoose.model("User", userSchema);
 module.exports = User; // what's in the DB

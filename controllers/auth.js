@@ -4,6 +4,8 @@ const crypto = require("crypto");
 
 // get our model here for crud operations
 const User = require("../models/user");
+const { promisify } = require("util");
+const { urlToHttpOptions } = require("url");
 
 const signToken = (userId) => {
   return jwt.sign({ userId }, process.env.JWT_SECRET);
@@ -166,6 +168,27 @@ exports.protect = async (req, res, next) => {
   }
 
   // verification token
+  const decoded = await promisify(jwt.verify)(token, process.env.JWT_SECRET);
+
+  // check if user still exists
+  const this_user = await User.findById(decoded.userId);
+
+  if (!this_user) {
+    res.status(400).json({
+      status: "error",
+      message: "User doesn't exist",
+    })
+  }
+
+  if (this_user.changedPasswordAfter(decoded.iat)) {
+    res.status(400).json({
+      status: "error",
+      message: "User recently changed password! Please log in again.",
+    })
+  }
+
+  req.user = this_user;
+  next()
 };
 
 // forgot password controller
