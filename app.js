@@ -1,54 +1,60 @@
-const express = require('express') // web framework
+const express = require("express"); // web framework
 
-const morgan = require('morgan') // logger middleware
+const routes = require("./routes/index"); // get all the routes
 
-const rateLimit = require('express-rate-limit')
+const morgan = require("morgan"); // logger middleware
 
-const helmet = require('helmet') // security middleware
+const rateLimit = require("express-rate-limit");
 
-const mongoSanitize = require('express-mongo-sanitize') // prevent nosql injection
+const helmet = require("helmet"); // security middleware
 
-const bodyParser = require('body-parser') // parse request body
+const mongoSanitize = require("express-mongo-sanitize"); // prevent nosql injection
 
-const xss = require('xss') //prevent xss attacks
+const bodyParser = require("body-parser"); // parse request body
 
-const cors = require("cors")
+const xss = require("xss"); //prevent xss attacks
 
-const app = express()
+const cors = require("cors");
 
-app.use(express.urlencoded({
-    extended: true
-}))
+const app = express();
 
-app.use(mongoSanitize())
+app.use(
+  express.urlencoded({
+    extended: true,
+  })
+);
+
+app.use(mongoSanitize());
 
 // app.use(xss())
 
 // next is to add other middlewares1
-app.use(cors({
-    origin: 'x',
+app.use(
+  cors({
+    origin: "x",
     methods: ["GET", "PATCH", "PUT", "DELETE", "POST"],
     credentials: true,
-}))
+  })
+);
 
-app.use(express.json({ limit: "10kb" }))
-app.use(bodyParser.json())
-app.use(bodyParser.urlencoded({ encoded: true}))
-app.use(helmet())
+app.use(express.json({ limit: "10kb" }));
+app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ encoded: true }));
+app.use(helmet());
 
-if (process.env.NODE_ENV === 'development') {
-    app.use(morgan('dev'))
+if (process.env.NODE_ENV === "development") {
+  app.use(morgan("dev"));
 }
 
 // to avoid crashing the server with too many requests
 const limiter = rateLimit({
-    max: 1000,
-    windowMs: 60 * 60 * 1000,
-    message: "Try again in an hour"
-})
+  max: 1000,
+  windowMs: 60 * 60 * 1000,
+  message: "Try again in an hour",
+});
 
-app.use('/siro', limiter) // apply rate limiting to all requests starting with /siro
+app.use("/siro", limiter); // apply rate limiting to all requests starting with /siro
 
+app.use(routes);
 
-
-module.exports = app
+module.exports = app;
