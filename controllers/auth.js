@@ -69,12 +69,12 @@ exports.sendOTP = async (req, res, next) => {
   });
 
   // send mail here with the otp
-  mailService.sendEmail({
-    from: "warrensiro@gmail.com",
-    to: "example@gmail.com",
-    subject: "Your OTP Code",
-    text: `Your OTP code is ${new_otp}. It will expire in 10 minutes.`,
-  });
+  // mailService.sendEmail({
+  //   from: "warrensiro@gmail.com",
+  //   to: "example@gmail.com",
+  //   subject: "Your OTP Code",
+  //   text: `Your OTP code is ${new_otp}. It will expire in 10 minutes.`,
+  // })
 
   res.status(200).json({
     status: "success",
