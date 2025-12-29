@@ -9,7 +9,15 @@ const { promisify } = require("util");
 const { urlToHttpOptions } = require("url");
 
 const signToken = (userId) => {
-  return jwt.sign({ userId }, process.env.JWT_SECRET);
+  return jwt.sign({ userId }, process.env.JWT_SECRET, { expiresIn: "2d" });
+};
+
+const filterObj = (obj, ...allowedFields) => {
+  const newObj = {};
+  Object.keys(obj).forEach((el) => {
+    if (allowedFields.includes(el)) newObj[el] = obj[el];
+  });
+  return newObj;
 };
 
 // register controller/endpoint
@@ -68,6 +76,8 @@ exports.sendOTP = async (req, res, next) => {
     otp_expiry_time,
   });
 
+  console.log(new_otp)
+
   // send mail here with the otp
   // mailService.sendEmail({
   //   from: "warrensiro@gmail.com",
@@ -76,7 +86,7 @@ exports.sendOTP = async (req, res, next) => {
   //   text: `Your OTP code is ${new_otp}. It will expire in 10 minutes.`,
   // })
 
-  res.status(200).json({
+  return res.status(200).json({
     status: "success",
     message: "OTP sent successfully",
   });
@@ -92,14 +102,14 @@ exports.verifyOTP = async (req, res, next) => {
   });
 
   if (!user) {
-    res.status(400).json({
+    return res.status(400).json({
       status: "error",
       message: "Email is invalid or OTP has expired",
     });
   }
 
   if (!(await user.correctOTP(otp, user.otp))) {
-    res.status(400).json({
+    return res.status(400).json({
       status: "error",
       message: "OTP is incorrect",
     });
@@ -113,7 +123,7 @@ exports.verifyOTP = async (req, res, next) => {
 
   const token = signToken(user._id);
 
-  res.status(200).json({
+  return res.status(200).json({
     status: "success",
     message: "User verified successfully",
     token,
@@ -125,7 +135,7 @@ exports.login = async (req, res, next) => {
   const { email, password } = req.body;
 
   if (!email || !password) {
-    res.status(400).json({
+    return res.status(400).json({
       status: "error",
       message: "Both email and password are required",
     });
@@ -137,7 +147,7 @@ exports.login = async (req, res, next) => {
     !userDoc ||
     !(await userDoc.correctPassword(password, userDoc.password))
   ) {
-    res.status(400).json({
+    return res.status(400).json({
       status: 400,
       message: "Email or password is incorrect",
     });
@@ -145,7 +155,7 @@ exports.login = async (req, res, next) => {
 
   const token = signToken(userDoc._id);
 
-  res.status(200).json({
+  return res.status(200).json({
     status: "success",
     message: "Login successful",
     token,
@@ -167,12 +177,10 @@ exports.protect = async (req, res, next) => {
   }
 
   else {
-    req.status(400).json({
+    return res.status(401).json({
       status: "error",
       message: "You ain't logged in!"
     })
-
-    return;
   }
 
   // verification token
@@ -182,14 +190,14 @@ exports.protect = async (req, res, next) => {
   const this_user = await User.findById(decoded.userId);
 
   if (!this_user) {
-    res.status(400).json({
+    return res.status(400).json({
       status: "error",
       message: "User doesn't exist",
     })
   }
 
   if (this_user.changedPasswordAfter(decoded.iat)) {
-    res.status(400).json({
+    return res.status(400).json({
       status: "error",
       message: "User recently changed password! Please log in again.",
     })

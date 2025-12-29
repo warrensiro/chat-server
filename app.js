@@ -10,7 +10,7 @@ const helmet = require("helmet"); // security middleware
 
 const mongoSanitize = require("express-mongo-sanitize"); // prevent nosql injection
 
-const bodyParser = require("body-parser"); // parse request body
+// const bodyParser = require("body-parser"); // parse request body
 
 const xss = require("xss"); //prevent xss attacks
 
@@ -18,28 +18,33 @@ const cors = require("cors");
 
 const app = express();
 
+app.use(express.json({ limit: "10kb" }));
+
 app.use(
   express.urlencoded({
     extended: true,
   })
 );
 
-app.use(mongoSanitize());
+app.use(mongoSanitize({
+  replaceWith: '_',
+  sanitizeQuery: false, //avoids express getter issue
+})); // to prevent nosql injection
 
 // app.use(xss())
 
 // next is to add other middlewares1
 app.use(
   cors({
-    origin: "x",
+    origin: true,
     methods: ["GET", "PATCH", "PUT", "DELETE", "POST"],
     credentials: true,
   })
 );
 
-app.use(express.json({ limit: "10kb" }));
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ encoded: true }));
+
+// app.use(bodyParser.json());
+// app.use(bodyParser.urlencoded({ encoded: true }));
 app.use(helmet());
 
 if (process.env.NODE_ENV === "development") {
@@ -54,6 +59,11 @@ const limiter = rateLimit({
 });
 
 app.use("/siro", limiter); // apply rate limiting to all requests starting with /siro
+
+// app.post("/ping", (req, res) => {
+//   res.json({ pong: true });
+// });
+
 
 app.use(routes);
 
