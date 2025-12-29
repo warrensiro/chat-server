@@ -71,12 +71,24 @@ exports.sendOTP = async (req, res, next) => {
 
   const otp_expiry_time = Date.now() + 10 * 60 * 1000; // 10 minutes from now
 
-  await User.findByIdAndUpdate(userId, {
-    otp: new_otp,
-    otp_expiry_time,
-  });
+  // tetch user
+  const user = await User.findById(userId);
 
-  console.log(new_otp)
+  if (!user) {
+    return res.status(404).json({
+      status: "error",
+      message: "User not found",
+    });
+  }
+
+  // assign fields
+  user.otp = new_otp;               // plain OTP
+  user.otp_expiry_time = otp_expiry_time;
+
+  // save → triggers pre('save') OTP hashing
+  await user.save({ validateModifiedOnly: true });
+
+  console.log("OTP (send via email):", new_otp);
 
   // send mail here with the otp
   // mailService.sendEmail({
@@ -212,7 +224,7 @@ exports.forgotPassword = async (req, res, next) => {
   const user = await User.findOne({ email: req.body.email });
 
   if (!user) {
-    res.status(400).json({
+    res.status(404).json({
       status: "error",
       message: "No user with this email",
     });
@@ -222,10 +234,12 @@ exports.forgotPassword = async (req, res, next) => {
 
   // generate random reset token
   const resetToken = user.createPasswordResetToken();
+  await user.save({ validateBeforeSave: false });
 
-  const resetURL = `https://siro.com/auth/reset-password/?code=${resetToken}`;
   try {
+    const resetURL = `https://siro.com/auth/reset-password/?code=${resetToken}`;
     // send mail here
+    console.log(resetToken)
     res.status(200).json({
       status: "success",
       message: "Reset password link sent to mail",
@@ -247,7 +261,7 @@ exports.forgotPassword = async (req, res, next) => {
 exports.resetPassword = async (req, res, next) => {
   const hashedToken = crypto
     .createHash("sha256")
-    .update(req.params.token)
+    .update(req.body.token)
     .digest("hex");
 
   const user = await User.findOne({

@@ -54,29 +54,29 @@ const userSchema = new mongoose.Schema({
     default: false,
   },
   otp: {
-    type: Number,
+    type: String,
   },
   otp_expiry_time: {
     type: Date,
   },
 });
 
-userSchema.pre("save", async function (next) {
+userSchema.pre("save", function () {
   // only run this function if otp was actually modified
-  if (!this.isModified("otp")) return;
+  if (!this.isModified("otp") || !this.otp) return;
 
   // encrypt otp with cost of 12
-  this.otp = await bcrypt.hash(this.otp, 12);
-
+  this.otp = crypto.createHash("sha256").update(this.otp.toString()).digest("hex");
 });
 
-userSchema.pre("save", async function (next) {
+userSchema.pre("save", async function () {
   // only run this function if password was actually modified
   if (!this.isModified("password")) return;
 
   // encrypt password with cost of 12
   this.password = await bcrypt.hash(this.password, 12);
-
+  this.passwordConfirm = undefined;
+  
 });
 
 userSchema.methods.correctPassword = async function (
@@ -86,8 +86,13 @@ userSchema.methods.correctPassword = async function (
   return await bcrypt.compare(candidatePassword, userPassword);
 };
 
-userSchema.methods.correctOTP = async function (candidateOTP, userOTP) {
-  return await bcrypt.compare(candidateOTP, userOTP);
+userSchema.methods.correctOTP = function (candidateOTP, userOTP) {
+  const hashedOTP = crypto
+    .createHash("sha256")
+    .update(candidateOTP.toString())
+    .digest("hex");
+
+  return hashedOTP === userOTP;
 };
 
 userSchema.methods.createPasswordResetToken = function () {
@@ -98,14 +103,14 @@ userSchema.methods.createPasswordResetToken = function () {
     .update(resetToken)
     .digest("hex");
 
-    this.passwordResetExpires = Date.now() + 10 * 60 * 1000; // 10 minutes
+  this.passwordResetExpires = Date.now() + 10 * 60 * 1000; // 10 minutes
 
   return resetToken;
 };
 
 userSchema.methods.changedPasswordAfter = function (timestamp) {
   return timestamp < this.passwordChangedAt;
-}
+};
 
 const User = new mongoose.model("User", userSchema);
 module.exports = User; // what's in the DB
