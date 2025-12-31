@@ -59,6 +59,15 @@ const userSchema = new mongoose.Schema({
   otp_expiry_time: {
     type: Date,
   },
+  socket_id: {
+    type: String,
+  },
+  friends: [
+    {
+      type: mongoose.Schema.ObjectId,
+      ref: "User",
+    },
+  ],
 });
 
 userSchema.pre("save", function () {
@@ -66,7 +75,10 @@ userSchema.pre("save", function () {
   if (!this.isModified("otp") || !this.otp) return;
 
   // encrypt otp with cost of 12
-  this.otp = crypto.createHash("sha256").update(this.otp.toString()).digest("hex");
+  this.otp = crypto
+    .createHash("sha256")
+    .update(this.otp.toString())
+    .digest("hex");
 });
 
 userSchema.pre("save", async function () {
@@ -76,7 +88,6 @@ userSchema.pre("save", async function () {
   // encrypt password with cost of 12
   this.password = await bcrypt.hash(this.password, 12);
   this.passwordConfirm = undefined;
-  
 });
 
 userSchema.methods.correctPassword = async function (
