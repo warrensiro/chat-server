@@ -59,4 +59,13 @@ io.on("connection", async (socket) => {
   if (user_id) {
     await User.findByIdAndUpdate(user_id, { socket_id });
   }
+  // socket event listeners
+  socket.on("friend_request", async (data) => {
+    console.log(data.to);
+    // to is to the id in the server
+    const to = await User.findById(data.to);
+
+    // send alert to user that they habe received a request
+    io.to(to.socket_id).emit("New_friend_request", {});
+  });
 });
