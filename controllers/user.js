@@ -61,7 +61,7 @@ exports.getFriendRequests = async (req, res, next) => {
 
 exports.getFriends = async (req, res, next) => {
   const friends = await User.findById(req.user._id).populate(
-    "fiends",
+    "friends",
     "_id firstName lastName"
   );
 
