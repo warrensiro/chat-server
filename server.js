@@ -20,6 +20,7 @@ process.on("unhandledRejection", (err) => {
 
 const http = require("http");
 const User = require("./models/user");
+const FriendRequest = require("./models/friendRequest");
 
 const server = http.createServer(app);
 
@@ -49,23 +50,35 @@ server.listen(port, () => {
 
 // fired when client logs to our server
 io.on("connection", async (socket) => {
-  console.log(socket);
+  console.log(JSON.stringify(socket.handshake.query));
   const user_id = socket.handshake.query("user_id");
 
   const socket_id = socket.id;
 
   console.log(`User connected ${socket_id}`);
 
-  if (user_id) {
+  if (Boolean(user_id)) {
     await User.findByIdAndUpdate(user_id, { socket_id });
   }
   // socket event listeners
   socket.on("friend_request", async (data) => {
     console.log(data.to);
     // to is to the id in the server
-    const to = await User.findById(data.to);
+    const to_user = await User.findById(data.to).select("socket_id");
+    const from_user = await User.findById(data.from).select("socket_id");
 
-    // send alert to user that they habe received a request
-    io.to(to.socket_id).emit("New_friend_request", {});
+    // create friend request
+    await FriendRequest.create({
+      sender: data.from,
+      recipient: data.to
+    })
+
+    // send alert to user that they have received a request
+    io.to(to_user.socket_id).emit("New_friend_request", {
+      message: "New friend request received"
+    });
+    io.to(from_user.socket_id).emit("Request sent", {
+      message: "Friend request sent"
+    })
   });
 });
