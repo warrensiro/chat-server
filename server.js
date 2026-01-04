@@ -70,15 +70,48 @@ io.on("connection", async (socket) => {
     // create friend request
     await FriendRequest.create({
       sender: data.from,
-      recipient: data.to
-    })
+      recipient: data.to,
+    });
 
     // send alert to user that they have received a request
     io.to(to_user.socket_id).emit("New_friend_request", {
-      message: "New friend request received"
+      message: "New friend request received",
     });
     io.to(from_user.socket_id).emit("Request sent", {
-      message: "Friend request sent"
-    })
+      message: "Friend request sent",
+    });
+  });
+
+  socket.on("accept_request", async (data) => {
+    console.log(data);
+
+    const request_doc = await FriendRequest.findById(data.request_id);
+
+    console.log(request_doc);
+
+    const sender = await User.findById(request_doc.sender);
+    const receiver = await User.findById(request_doc.recipient);
+
+    sender.friends.push(request_doc.recipient);
+    receiver.friends.push(request_doc.sender);
+
+    await receiver.save({ new: true, validateModifiedOnly: true });
+    await sender.save({ new: true, validateModifiedOnly: true });
+
+    // delete the friend request
+    await FriendRequest.findByIdAndDelete(data.request_id);
+
+    // send alert that request is accepted
+    io.to(sender.socket_id).emit("Friend Request Accepted", {
+      message: "Friend request accepted",
+    });
+    io.to(receiver.socket_id).emit("Friend Request Accepted", {
+      message: "Friend request accepted",
+    });
+  });
+
+  socket.on("end", function () {
+    console.log("Closing connection");
+    socket.disconnect(0);
   });
 });
