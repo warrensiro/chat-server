@@ -82,7 +82,7 @@ exports.sendOTP = async (req, res, next) => {
   }
 
   // assign fields
-  user.otp = new_otp;               // plain OTP
+  user.otp = new_otp; // plain OTP
   user.otp_expiry_time = otp_expiry_time;
 
   // save → triggers pre('save') OTP hashing
@@ -139,6 +139,7 @@ exports.verifyOTP = async (req, res, next) => {
     status: "success",
     message: "User verified successfully",
     token,
+    user_id: user._id,
   });
 };
 
@@ -171,28 +172,27 @@ exports.login = async (req, res, next) => {
     status: "success",
     message: "Login successful",
     token,
+    user_id: userDoc._id,
   });
 };
 
 // protect middleware
 exports.protect = async (req, res, next) => {
   // getting token and check if it's there
-  let token
+  let token;
 
-  if (req.headers.authorization && req.headers.authorization.startsWith("Bearer")) {
+  if (
+    req.headers.authorization &&
+    req.headers.authorization.startsWith("Bearer")
+  ) {
     token = req.headers.authorization.split(" ")[1];
-
-
-  }
-  else if (req.cookies.jwt) {
-    token = req.cookies.jwt
-  }
-
-  else {
+  } else if (req.cookies.jwt) {
+    token = req.cookies.jwt;
+  } else {
     return res.status(401).json({
       status: "error",
-      message: "You ain't logged in!"
-    })
+      message: "You ain't logged in!",
+    });
   }
 
   // verification token
@@ -205,18 +205,18 @@ exports.protect = async (req, res, next) => {
     return res.status(400).json({
       status: "error",
       message: "User doesn't exist",
-    })
+    });
   }
 
   if (this_user.changedPasswordAfter(decoded.iat)) {
     return res.status(400).json({
       status: "error",
       message: "User recently changed password! Please log in again.",
-    })
+    });
   }
 
   req.user = this_user;
-  next()
+  next();
 };
 
 // forgot password controller
@@ -239,7 +239,7 @@ exports.forgotPassword = async (req, res, next) => {
   try {
     const resetURL = `https://siro.com/auth/reset-password/?code=${resetToken}`;
     // send mail here
-    console.log(resetToken)
+    console.log(resetToken);
     res.status(200).json({
       status: "success",
       message: "Reset password link sent to mail",
