@@ -1,6 +1,7 @@
 const app = require("./app");
 const dotenv = require("dotenv");
 const mongoose = require("mongoose");
+const path = require("path");
 dotenv.config({ path: "./config.env" });
 
 const { Server } = require("socket.io");
@@ -58,7 +59,7 @@ io.on("connection", async (socket) => {
   console.log(`User connected ${socket_id}`);
 
   if (Boolean(user_id)) {
-    await User.findByIdAndUpdate(user_id, { socket_id });
+    await User.findByIdAndUpdate(user_id, { socket_id, status: "Online" });
   }
   // socket event listeners
   socket.on("friend_request", async (data) => {
@@ -110,7 +111,42 @@ io.on("connection", async (socket) => {
     });
   });
 
-  socket.on("end", function () {
+  // handle text/link messages
+  socket.on("text_message", (data) => {
+    console.log("Received data", data);
+
+    // data(to, from, text)
+
+    // create a new convo
+
+    // save to db
+
+    // emit event
+  });
+
+  // handle media/document messages
+  socket.on("file_message", (data) => {
+    console.log("Received message", data);
+
+    // get extension
+    const fileExtension = path.extname(data.file.name);
+
+    // generate unique file name
+    const fileName = `${Date.now()}_${Math.floor(
+      Math.random() * 1000
+    )}${fileExtension}`;
+
+    // upload file to s3
+  });
+
+  socket.on("end", async (data) => {
+    // find user by id and have status to offline
+    if (data.user_id) {
+      await User.findByIdAndUpdate(data.user_id, { status: "Offline" });
+    }
+
+    // broadcast user is offline
+
     console.log("Closing connection");
     socket.disconnect(0);
   });
