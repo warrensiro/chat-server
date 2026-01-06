@@ -22,6 +22,7 @@ process.on("unhandledRejection", (err) => {
 const http = require("http");
 const User = require("./models/user");
 const FriendRequest = require("./models/friendRequest");
+const OneToOneMessage = require("./models/OneToOneMessage");
 
 const server = http.createServer(app);
 
@@ -109,6 +110,44 @@ io.on("connection", async (socket) => {
     io.to(receiver.socket_id).emit("Friend Request Accepted", {
       message: "Friend request accepted",
     });
+  });
+
+  // load conversation
+  socket.on("get_direct_conversations", async ({ user_id }, callback) => {
+    const existing_conversations = await OneToOneMessage.find({
+      participants: { $all: [user_id] },
+    }).populate("participants", "firstName lastName _id email status");
+    console.log(existing_conversations);
+
+    callback(existing_conversations);
+  });
+
+  socket.on("start_conversation", async (data) => {
+    const { to, from } = data;
+
+    const existing_conversation = await OneToOneMessage.find({
+      participants: { $size: 2, $all: [to, from] },
+    }).populate("participants", "firstName lastName _id email status");
+
+    console.log("Existing Conversation", existing_conversation[0]);
+
+    if (existing_conversation.length === 0) {
+      let new_chat = await OneToOneMessage.create({
+        participants: [to, from],
+      });
+      new_chat = await OneToOneMessage.findById(new_chat._id).populate(
+        "participants",
+        "firstName lastName _id email status"
+      );
+      console.log(new_chat)
+
+      socket.emit("start_chat", new_chat)
+
+    }
+
+    else {
+      socket.emit("open_chat", existing_conversation[0])
+    }
   });
 
   // handle text/link messages
