@@ -28,7 +28,7 @@ const server = http.createServer(app);
 
 const io = new Server(server, {
   cors: {
-    origin: "http://localhost:3001",
+    origin: "http://localhost:8000",
     methods: ["GET", "POST"],
   },
 });
@@ -44,7 +44,7 @@ mongoose
     console.log(err);
   });
 
-const port = process.env.PORT || 3000;
+const port = process.env.PORT || 8000;
 
 server.listen(port, () => {
   console.log(`App is running on port ${port}`);
