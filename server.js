@@ -92,6 +92,8 @@ io.on("connection", async (socket) => {
 
     const request = await FriendRequest.create({ sender: from, recipient: to });
 
+    console.log("FRIEND REQUEST CREATED:", request);
+
     // notify recipient
     if (receiver.socket_id) {
       io.to(receiver.socket_id).emit("new_friend_request", {
@@ -122,8 +124,10 @@ io.on("connection", async (socket) => {
       if (!sender || !receiver) return;
 
       // add friends if not already
-      if (!sender.friends.includes(receiver._id)) sender.friends.push(receiver._id);
-      if (!receiver.friends.includes(sender._id)) receiver.friends.push(sender._id);
+      if (!sender.friends.includes(receiver._id))
+        sender.friends.push(receiver._id);
+      if (!receiver.friends.includes(sender._id))
+        receiver.friends.push(sender._id);
 
       await sender.save({ validateModifiedOnly: true });
       await receiver.save({ validateModifiedOnly: true });
@@ -138,10 +142,9 @@ io.on("connection", async (socket) => {
           participants: [sender._id, receiver._id],
           messages: [],
         });
-        conversation = await OneToOneMessage.findById(conversation._id).populate(
-          "participants",
-          "firstName lastName _id email status"
-        );
+        conversation = await OneToOneMessage.findById(
+          conversation._id,
+        ).populate("participants", "firstName lastName _id email status");
       }
 
       await FriendRequest.findByIdAndDelete(request_id);
@@ -166,11 +169,13 @@ io.on("connection", async (socket) => {
     }
   });
 
-  // -------- Conversations --------
+  // Conversations
   socket.on("get_direct_conversations", async (_, callback) => {
     const conversations = await OneToOneMessage.find({
-      participants: { $all: [socket.user_id] },
-    }).populate("participants", "firstName lastName _id email status");
+      participants: socket.user_id,
+    }).select("_id participants messages updatedAt")
+      .populate("participants", "firstName lastName _id email status")
+      .sort({ updatedAt: -1 });
 
     callback(conversations || []);
   });
@@ -190,7 +195,7 @@ io.on("connection", async (socket) => {
       });
       conversation = await OneToOneMessage.findById(conversation._id).populate(
         "participants",
-        "firstName lastName _id email status"
+        "firstName lastName _id email status",
       );
     }
 
@@ -198,26 +203,32 @@ io.on("connection", async (socket) => {
   });
 
   socket.on("get_messages", async (data, callback) => {
-    const convo = await OneToOneMessage.findById(data.conversation_id).select("messages");
+    const convo = await OneToOneMessage.findById(data.conversation_id).select(
+      "messages",
+    );
     callback(convo?.messages || []);
   });
 
-  // -------- Messages --------
+  // Messages
   socket.on("text_message", async (data) => {
-    const { to, from, message, conversation_id, type } = data;
+    const { to, from, message, conversation_id, type, client_id } = data;
     if (!to || !from || !conversation_id || !message) return;
 
     const convo = await OneToOneMessage.findById(conversation_id);
     if (!convo) return;
 
     // check for duplicate by timestamp+text (optional)
-    if (convo.messages.some((m) => m.text === message && m.from.toString() === from)) return;
+    if (client_id && convo.messages.some((m) => m.client_id === client_id)) {
+      return;
+    }
 
     const newMessage = {
+      _id: new mongoose.Types.ObjectId(),
+      client_id,
       from,
       to,
       text: message,
-      type: type || "text",
+      type: "Text",
       created_at: Date.now(),
     };
 
@@ -227,7 +238,15 @@ io.on("connection", async (socket) => {
     for (const userId of [to, from]) {
       const socketId = await getSocketIdByUserId(userId);
       if (socketId) {
-        io.to(socketId).emit("new_message", { conversation_id, message: newMessage });
+        const populatedConvo = await OneToOneMessage.findById(
+          conversation_id,
+        ).populate("participants", "firstName lastName _id email status");
+
+        io.to(socketId).emit("new_message", {
+          conversation_id,
+          message: newMessage,
+          participants: populatedConvo.participants,
+        });
       }
     }
   });
@@ -237,7 +256,7 @@ io.on("connection", async (socket) => {
     // implement S3 upload here
   });
 
-  // Disconnect 
+  // Disconnect
   socket.on("disconnect", async () => {
     await User.findByIdAndUpdate(socket.user_id, {
       status: "Offline",

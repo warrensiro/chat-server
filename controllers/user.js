@@ -28,24 +28,38 @@ exports.updateMe = async (req, res, next) => {
 };
 
 exports.getUsers = async (req, res, next) => {
-  const all_users = await User.find({
-    verified: true,
-  }).select("firstName lastName _id");
-
   const this_user = req.user;
 
-  const remaining_users = all_users.filter(
-    (user) =>
-      !this_user.friends.includes(user._id) &&
-      user._id.toString() !== req.user._id.toString()
+  // get all friend requests involving this user
+  const requests = await FriendRequest.find({
+    $or: [
+      { sender: this_user._id },
+      { recipient: this_user._id },
+    ],
+  });
+
+  // collect all userIds involved in requests
+  const requestedUserIds = requests.map((req) =>
+    req.sender.toString() === this_user._id.toString()
+      ? req.recipient.toString()
+      : req.sender.toString()
   );
+
+  const users = await User.find({
+    verified: true,
+    _id: {
+      $ne: this_user._id,
+      $nin: [...this_user.friends, ...requestedUserIds],
+    },
+  }).select("_id firstName lastName status avatar");
 
   res.status(200).json({
     status: "success",
-    data: remaining_users,
+    data: users,
     message: "Users found successfully",
   });
 };
+
 
 exports.getFriendRequests = async (req, res, next) => {
   const requests = await FriendRequest.find({
@@ -57,6 +71,7 @@ exports.getFriendRequests = async (req, res, next) => {
     data: requests,
     message: "Friend requests fetched successfully",
   });
+  console.log("Friend requests:", requests);
 };
 
 exports.getFriends = async (req, res, next) => {

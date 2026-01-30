@@ -9,6 +9,9 @@ const oneToOneMessageSchema = new mongoose.Schema({
   ],
   messages: [
     {
+      client_id: {
+        type: String,
+      },
       to: {
         type: mongoose.Schema.ObjectId,
         ref: "User",
@@ -33,7 +36,8 @@ const oneToOneMessageSchema = new mongoose.Schema({
       },
     },
   ],
-});
+},
+{ timestamps: true });
 
 const OneToOneMessage = new mongoose.model(
   "OneToOneMessage",
