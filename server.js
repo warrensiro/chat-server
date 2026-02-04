@@ -229,7 +229,7 @@ io.on("connection", async (socket) => {
       to,
       text: message,
       type: "Text",
-      created_at: Date.now(),
+      createdAt: new Date(),
     };
 
     convo.messages.push(newMessage);
