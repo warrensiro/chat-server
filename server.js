@@ -65,6 +65,48 @@ io.on("connection", async (socket) => {
     status: "Online",
   });
 
+  // 🔁 Mark all pending messages as delivered
+  const conversations = await OneToOneMessage.find({
+    participants: socket.user_id,
+  });
+
+  for (const convo of conversations) {
+    const pendingMessages = convo.messages.filter(
+      (m) => m.to.toString() === socket.user_id && m.status === "sent",
+    );
+
+    if (pendingMessages.length === 0) continue;
+
+    // update DB
+    await OneToOneMessage.updateOne(
+      { _id: convo._id },
+      {
+        $set: {
+          "messages.$[m].status": "delivered",
+        },
+      },
+      {
+        arrayFilters: [
+          {
+            "m.to": socket.user_id,
+            "m.status": "sent",
+          },
+        ],
+      },
+    );
+
+    // notify senders
+    for (const msg of pendingMessages) {
+      const senderSocket = await getSocketIdByUserId(msg.from);
+      if (senderSocket) {
+        io.to(senderSocket).emit("message_delivered", {
+          conversation_id: convo._id,
+          message_id: msg._id,
+        });
+      }
+    }
+  }
+
   // -------- Helper --------
   async function getSocketIdByUserId(userId) {
     const user = await User.findById(userId);
@@ -173,7 +215,8 @@ io.on("connection", async (socket) => {
   socket.on("get_direct_conversations", async (_, callback) => {
     const conversations = await OneToOneMessage.find({
       participants: socket.user_id,
-    }).select("_id participants messages updatedAt")
+    })
+      .select("_id participants messages updatedAt")
       .populate("participants", "firstName lastName _id email status")
       .sort({ updatedAt: -1 });
 
@@ -211,13 +254,13 @@ io.on("connection", async (socket) => {
 
   // Messages
   socket.on("text_message", async (data) => {
-    const { to, from, message, conversation_id, type, client_id } = data;
+    const { to, from, message, conversation_id, client_id } = data;
     if (!to || !from || !conversation_id || !message) return;
 
     const convo = await OneToOneMessage.findById(conversation_id);
     if (!convo) return;
 
-    // check for duplicate by timestamp+text (optional)
+    // prevent duplicates
     if (client_id && convo.messages.some((m) => m.client_id === client_id)) {
       return;
     }
@@ -230,24 +273,101 @@ io.on("connection", async (socket) => {
       text: message,
       type: "Text",
       createdAt: new Date(),
+      status: "sent",
     };
 
     convo.messages.push(newMessage);
     await convo.save();
 
-    for (const userId of [to, from]) {
+    // send to receiver
+    // const receiverSocket = await getSocketIdByUserId(to);
+    // if (receiverSocket) {
+    //   io.to(receiverSocket).emit("new_message", {
+    //     conversation_id,
+    //     message: newMessage,
+    //   });
+    // }
+
+    // send to BOTH users
+    for (const userId of [from, to]) {
       const socketId = await getSocketIdByUserId(userId);
       if (socketId) {
-        const populatedConvo = await OneToOneMessage.findById(
-          conversation_id,
-        ).populate("participants", "firstName lastName _id email status");
-
         io.to(socketId).emit("new_message", {
           conversation_id,
           message: newMessage,
-          participants: populatedConvo.participants,
+          /* participants: convo.participants.map((p) => p._id.toString()), */
         });
       }
+    }
+  });
+
+  socket.on("message_delivered", async ({ conversation_id, message_id }) => {
+    if (!conversation_id || !message_id) return;
+
+    await OneToOneMessage.updateOne(
+      { _id: conversation_id },
+      {
+        $set: {
+          "messages.$[m].status": "delivered",
+        },
+      },
+      {
+        arrayFilters: [
+          {
+            "m._id": message_id,
+            "m.to": socket.user_id,
+            "m.status": "sent",
+          },
+        ],
+      },
+    );
+
+    const convo = await OneToOneMessage.findById(conversation_id);
+    const senderId = convo.messages.find(
+      (m) => m._id.toString() === message_id,
+    )?.from;
+
+    const senderSocket = await getSocketIdByUserId(senderId);
+    if (senderSocket) {
+      io.to(senderSocket).emit("message_delivered", {
+        conversation_id,
+        message_id,
+      });
+    }
+  });
+
+  socket.on("messages_read", async ({ conversation_id }) => {
+    if (!conversation_id) return;
+
+    const convo = await OneToOneMessage.findById(conversation_id);
+    if (!convo) return;
+
+    await OneToOneMessage.updateOne(
+      { _id: conversation_id },
+      {
+        $set: {
+          "messages.$[m].status": "read",
+        },
+      },
+      {
+        arrayFilters: [
+          {
+            "m.to": socket.user_id,
+            "m.status": { $in: ["sent", "delivered"] },
+          },
+        ],
+      },
+    );
+
+    const otherUserId = convo.participants.find(
+      (id) => id.toString() !== socket.user_id,
+    );
+
+    const otherSocketId = await getSocketIdByUserId(otherUserId);
+    if (otherSocketId) {
+      io.to(otherSocketId).emit("messages_read", {
+        conversation_id,
+      });
     }
   });
 
