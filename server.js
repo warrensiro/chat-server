@@ -254,18 +254,44 @@ io.on("connection", async (socket) => {
 
   // Messages
   socket.on("text_message", async (data) => {
-    const { to, from, message, conversation_id, client_id } = data;
+    const { to, from, message, conversation_id, client_id, replyTo } = data;
     if (!to || !from || !conversation_id || !message) return;
 
-    const convo = await OneToOneMessage.findById(conversation_id);
+    const convo = await OneToOneMessage.findById(conversation_id).populate(
+      "participants",
+      "firstName lastName _id",
+    );
     if (!convo) return;
 
-    // prevent duplicates
-    if (client_id && convo.messages.some((m) => m.client_id === client_id)) {
-      return;
-    }
+    // Prepare replyTo payload
+    let replyToPayload = null;
+    if (replyTo) {
+      let originalMsg;
 
-    const { replyTo } = data; // destructure from client payload
+      // If replyTo is an object with _id (from client), find it in the conversation
+      if (typeof replyTo === "object" && replyTo._id) {
+        originalMsg = convo.messages.find(
+          (m) => m._id.toString() === replyTo._id,
+        );
+      } else if (typeof replyTo === "string") {
+        originalMsg = convo.messages.find((m) => m._id.toString() === replyTo);
+      }
+
+      if (originalMsg) {
+        const participant = convo.participants.find(
+          (p) => p._id.toString() === originalMsg.from.toString(),
+        );
+        replyToPayload = {
+          _id: originalMsg._id,
+          from: originalMsg.from,
+          text: originalMsg.text,
+          // Always send actual name
+          fromName: participant
+            ? `${participant.firstName} ${participant.lastName || ""}`.trim()
+            : "Unknown",
+        };
+      }
+    }
 
     const newMessage = {
       _id: new mongoose.Types.ObjectId(),
@@ -276,29 +302,20 @@ io.on("connection", async (socket) => {
       type: "Text",
       createdAt: new Date(),
       status: "sent",
-      replyTo: replyTo || null, // set to null if not provided
+      replyTo: replyToPayload,
     };
 
     convo.messages.push(newMessage);
     await convo.save();
 
-    // send to receiver
-    // const receiverSocket = await getSocketIdByUserId(to);
-    // if (receiverSocket) {
-    //   io.to(receiverSocket).emit("new_message", {
-    //     conversation_id,
-    //     message: newMessage,
-    //   });
-    // }
-
-    // send to BOTH users
+    // send to both users
     for (const userId of [from, to]) {
       const socketId = await getSocketIdByUserId(userId);
       if (socketId) {
         io.to(socketId).emit("new_message", {
           conversation_id,
           message: newMessage,
-          /* participants: convo.participants.map((p) => p._id.toString()), */
+          participants: convo.participants.map((p) => p._id.toString()),
         });
       }
     }
