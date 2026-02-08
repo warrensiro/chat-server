@@ -265,6 +265,8 @@ io.on("connection", async (socket) => {
       return;
     }
 
+    const { replyTo } = data; // destructure from client payload
+
     const newMessage = {
       _id: new mongoose.Types.ObjectId(),
       client_id,
@@ -274,6 +276,7 @@ io.on("connection", async (socket) => {
       type: "Text",
       createdAt: new Date(),
       status: "sent",
+      replyTo: replyTo || null, // set to null if not provided
     };
 
     convo.messages.push(newMessage);
