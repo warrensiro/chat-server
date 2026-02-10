@@ -391,6 +391,70 @@ io.on("connection", async (socket) => {
     }
   });
 
+  socket.on("message_reaction", async (data) => {
+    const { conversation_id, message_id, emoji, from } = data;
+
+    const convo = await OneToOneMessage.findById(conversation_id);
+    if (!convo) return;
+
+    const message = convo.messages.find(
+      (m) => m._id.toString() === message_id.toString(),
+    );
+    if (message) {
+      const existingIndex = message.reactions.findIndex(
+        (r) => r.from.toString() === from.toString(),
+      );
+
+      if (existingIndex > -1) {
+        // If the user clicked the SAME emoji, remove it (Toggle off)
+        if (message.reactions[existingIndex].emoji === emoji) {
+          message.reactions.splice(existingIndex, 1);
+        } else {
+          // If they clicked a DIFFERENT emoji, update it
+          message.reactions[existingIndex].emoji = emoji;
+        }
+      } else {
+        // New reaction
+        message.reactions.push({ from, emoji });
+      }
+
+      await convo.save();
+
+      // Broadcast the updated reactions array to all participants
+      convo.participants.forEach(async (pId) => {
+        const socketId = await getSocketIdByUserId(pId);
+        if (socketId) {
+          io.to(socketId).emit("new_reaction", {
+            conversation_id,
+            message_id,
+            reactions: message.reactions,
+          });
+        }
+      });
+    }
+  });
+
+  socket.on("delete_message", async ({ conversation_id, message_id, from }) => {
+    if (!conversation_id || !message_id) return;
+
+    const convo = await OneToOneMessage.findById(conversation_id);
+    if (!convo) return;
+
+    // Only allow sender to delete their message
+    const message = convo.messages.find((m) => m._id.toString() === message_id);
+    if (!message) return;
+    if (String(message.from) !== String(from)) return;
+
+    // Remove message
+    convo.messages = convo.messages.filter(
+      (m) => m._id.toString() !== message_id,
+    );
+    await convo.save();
+
+    // Notify all participants about the deletion
+    io.to(conversation_id).emit("message_deleted", { conversation_id, message_id });
+  });
+
   socket.on("file_message", (data) => {
     console.log("Received file message:", data);
     // implement S3 upload here
