@@ -1,6 +1,7 @@
 const app = require("./app");
 const dotenv = require("dotenv");
 const mongoose = require("mongoose");
+const Call = require("./models/call");
 const path = require("path");
 dotenv.config({ path: "./config.env" });
 
@@ -49,6 +50,8 @@ const port = process.env.PORT || 8000;
 server.listen(port, () => {
   console.log(`App is running on port ${port}`);
 });
+
+const callTimeouts = new Map();
 
 // fired when client logs to our server
 io.on("connection", async (socket) => {
@@ -452,7 +455,193 @@ io.on("connection", async (socket) => {
     await convo.save();
 
     // Notify all participants about the deletion
-    io.to(conversation_id).emit("message_deleted", { conversation_id, message_id });
+    io.to(conversation_id).emit("message_deleted", {
+      conversation_id,
+      message_id,
+    });
+  });
+
+  socket.on("audio_call_request", async ({ to, conversation_id }) => {
+    const from = socket.user_id;
+
+    if (!to || !conversation_id) return;
+
+    const conversation = await OneToOneMessage.findById(conversation_id);
+
+    if (
+      !conversation ||
+      !conversation.participants.some(
+        (p) => p.toString() === from.toString(),
+      ) ||
+      !conversation.participants.some((p) => p.toString() === to.toString())
+    ) {
+      return;
+    }
+
+    const receiver = await User.findById(to);
+
+    // 🚫 Prevent calling offline users
+    if (!receiver || receiver.status !== "Online") {
+      socket.emit("user_offline");
+      return;
+    }
+
+    // 🚫 Prevent double call
+    const existingCall = await Call.findOne({
+      $or: [
+        { caller: from, status: { $in: ["ringing", "ongoing"] } },
+        { receiver: from, status: { $in: ["ringing", "ongoing"] } },
+      ],
+    });
+
+    if (existingCall) {
+      socket.emit("already_in_call");
+      return;
+    }
+
+    const call = await Call.create({
+      conversation: conversation_id,
+      caller: from,
+      receiver: to,
+      type: "audio",
+      status: "ringing",
+      startedAt: new Date(),
+    });
+
+    const roomID = `call_${call._id}`;
+
+    if (receiver.socket_id) {
+      io.to(receiver.socket_id).emit("incoming_audio_call", {
+        from,
+        roomID,
+        call_id: call._id,
+      });
+    }
+
+    // ⏳ Auto-expire after 30s
+    const timeout = setTimeout(async () => {
+      const callDoc = await Call.findById(call._id);
+      if (callDoc && callDoc.status === "ringing") {
+        callDoc.status = "missed";
+        callDoc.endedAt = new Date();
+        await callDoc.save();
+
+        const caller = await User.findById(callDoc.caller);
+
+        if (caller?.socket_id) {
+          io.to(caller.socket_id).emit("audio_call_missed");
+        }
+
+        callTimeouts.delete(call._id.toString());
+      }
+    }, 30000);
+
+    callTimeouts.set(call._id.toString(), timeout);
+  });
+
+  socket.on("audio_call_accept", async ({ call_id }) => {
+    const call = await Call.findById(call_id);
+    if (!call || call.status !== "ringing") return;
+
+    if (call.receiver.toString() !== socket.user_id.toString()) return;
+
+    // 🔥 Set to ongoing
+    call.status = "ongoing";
+    await call.save();
+
+    const timeout = callTimeouts.get(call_id);
+    if (timeout) {
+      clearTimeout(timeout);
+      callTimeouts.delete(call_id);
+    }
+
+    const caller = await User.findById(call.caller);
+
+    if (caller?.socket_id) {
+      io.to(caller.socket_id).emit("audio_call_accepted", {
+        roomID: `call_${call_id}`,
+      });
+    }
+  });
+
+  socket.on("audio_call_reject", async ({ call_id }) => {
+    const call = await Call.findById(call_id);
+    if (!call || call.status !== "ringing") return;
+
+    // Only receiver can reject
+    if (call.receiver.toString() !== socket.user_id.toString()) return;
+
+    call.status = "rejected";
+    call.endedAt = new Date();
+    await call.save();
+
+    const timeout = callTimeouts.get(call_id);
+    if (timeout) {
+      clearTimeout(timeout);
+      callTimeouts.delete(call_id);
+    }
+
+    const caller = await User.findById(call.caller);
+
+    if (caller?.socket_id) {
+      io.to(caller.socket_id).emit("audio_call_rejected");
+    }
+  });
+
+  socket.on("audio_call_end", async ({ call_id }) => {
+    const call = await Call.findById(call_id);
+    if (!call) return;
+
+    if (
+      call.caller.toString() !== socket.user_id &&
+      call.receiver.toString() !== socket.user_id
+    ) {
+      return;
+    }
+
+    if (["completed", "missed", "rejected"].includes(call.status)) return;
+
+    const endedAt = new Date();
+
+    call.endedAt = endedAt;
+    if (call.status === "ongoing") {
+      call.duration = Math.floor((endedAt - call.startedAt) / 1000);
+    } else {
+      call.duration = 0;
+    }
+    call.status = "completed";
+
+    await call.save();
+
+    await OneToOneMessage.findByIdAndUpdate(call.conversation, {
+      $push: {
+        messages: {
+          _id: new mongoose.Types.ObjectId(),
+          from: call.caller,
+          to: call.receiver,
+          type: "Call",
+          text: `Audio call (${call.duration}s)`,
+          createdAt: new Date(),
+          status: "read",
+        },
+      },
+    });
+
+    const timeout = callTimeouts.get(call_id);
+    if (timeout) {
+      clearTimeout(timeout);
+      callTimeouts.delete(call_id);
+    }
+
+    // 🔥 Determine other user from DB, NOT frontend
+    const otherUserId =
+      call.caller.toString() === socket.user_id ? call.receiver : call.caller;
+
+    const otherUser = await User.findById(otherUserId);
+
+    if (otherUser?.socket_id) {
+      io.to(otherUser.socket_id).emit("audio_call_ended");
+    }
   });
 
   socket.on("file_message", (data) => {
@@ -466,6 +655,52 @@ io.on("connection", async (socket) => {
       status: "Offline",
       socket_id: null,
     });
+
+    const ongoingCalls = await Call.find({
+      $or: [{ caller: socket.user_id }, { receiver: socket.user_id }],
+      status: { $in: ["ringing", "ongoing"] },
+    });
+
+    for (const call of ongoingCalls) {
+      if (call.status === "ringing") {
+        call.status = "missed";
+      } else {
+        call.status = "completed";
+      }
+      call.endedAt = new Date();
+      call.duration = Math.floor((call.endedAt - call.startedAt) / 1000);
+      await call.save();
+      await OneToOneMessage.findByIdAndUpdate(call.conversation, {
+        $push: {
+          messages: {
+            _id: new mongoose.Types.ObjectId(),
+            from: call.caller,
+            to: call.receiver,
+            type: "Call",
+            text: `Audio call (${call.duration}s)`,
+            createdAt: new Date(),
+            status: "read",
+          },
+        },
+      });
+      const timeout = callTimeouts.get(call._id.toString());
+      if (timeout) {
+        clearTimeout(timeout);
+        callTimeouts.delete(call._id.toString());
+      }
+    }
+
+    for (const call of ongoingCalls) {
+      const otherUserId =
+        call.caller.toString() === socket.user_id ? call.receiver : call.caller;
+
+      const otherSocket = await getSocketIdByUserId(otherUserId);
+
+      if (otherSocket) {
+        io.to(otherSocket).emit("audio_call_ended");
+      }
+    }
+
     console.log("User disconnected:", socket.user_id);
   });
 });

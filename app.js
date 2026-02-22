@@ -23,13 +23,15 @@ app.use(express.json({ limit: "10kb" }));
 app.use(
   express.urlencoded({
     extended: true,
-  })
+  }),
 );
 
-app.use(mongoSanitize({
-  replaceWith: '_',
-  sanitizeQuery: false, //avoids express getter issue
-})); // to prevent nosql injection
+app.use(
+  mongoSanitize({
+    replaceWith: "_",
+    sanitizeQuery: false, //avoids express getter issue
+  }),
+); // to prevent nosql injection
 
 // app.use(xss())
 
@@ -39,9 +41,8 @@ app.use(
     origin: true,
     methods: ["GET", "PATCH", "PUT", "DELETE", "POST"],
     credentials: true,
-  })
+  }),
 );
-
 
 // app.use(bodyParser.json());
 // app.use(bodyParser.urlencoded({ encoded: true }));
@@ -63,7 +64,6 @@ app.use("/siro", limiter); // apply rate limiting to all requests starting with 
 // app.post("/ping", (req, res) => {
 //   res.json({ pong: true });
 // });
-
 
 app.use(routes);
 
