@@ -1,13 +1,25 @@
 const { generateToken04 } = require("../utils/zegoToken");
+const Call = require("../models/call"); // Import Call model
 
 exports.generateZegoToken = async (req, res) => {
   try {
     const { userID, roomID } = req.body;
 
     if (!userID || !roomID) {
-      return res.status(400).json({
-        message: "userID and roomID are required",
-      });
+      return res.status(400).json({ message: "userID and roomID are required" });
+    }
+
+    // Remove the "call_" prefix if your frontend sends "call_<id>"
+    const callId = roomID.replace(/^call_/, "");
+    const call = await Call.findById(callId);
+
+    if (!call) {
+      return res.status(404).json({ message: "Call not found" });
+    }
+
+    // Make sure the requesting user is either caller or receiver
+    if (call.caller.toString() !== userID && call.receiver.toString() !== userID) {
+      return res.status(403).json({ message: "You are not authorized for this call room" });
     }
 
     const appID = Number(process.env.ZEGO_APP_ID);
@@ -24,7 +36,7 @@ exports.generateZegoToken = async (req, res) => {
       userID,
       serverSecret,
       effectiveTimeInSeconds,
-      payload,
+      payload
     );
 
     res.status(200).json({
@@ -34,8 +46,6 @@ exports.generateZegoToken = async (req, res) => {
     });
   } catch (error) {
     console.error("Zego token error:", error);
-    res.status(500).json({
-      message: "Token generation failed",
-    });
+    res.status(500).json({ message: "Token generation failed" });
   }
 };

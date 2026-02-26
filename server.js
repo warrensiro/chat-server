@@ -461,7 +461,8 @@ io.on("connection", async (socket) => {
     });
   });
 
-  socket.on("audio_call_request", async ({ to, conversation_id }) => {
+  socket.on("call_request", async ({ to, conversation_id, type }) => {
+    if (!["audio", "video"].includes(type)) return;
     const from = socket.user_id;
 
     if (!to || !conversation_id) return;
@@ -480,13 +481,13 @@ io.on("connection", async (socket) => {
 
     const receiver = await User.findById(to);
 
-    // 🚫 Prevent calling offline users
+    // Prevent calling offline users
     if (!receiver || receiver.status !== "Online") {
       socket.emit("user_offline");
       return;
     }
 
-    // 🚫 Prevent double call
+    // Prevent double call
     const existingCall = await Call.findOne({
       $or: [
         { caller: from, status: { $in: ["ringing", "ongoing"] } },
@@ -503,7 +504,7 @@ io.on("connection", async (socket) => {
       conversation: conversation_id,
       caller: from,
       receiver: to,
-      type: "audio",
+      type,
       status: "ringing",
       startedAt: new Date(),
     });
@@ -511,10 +512,11 @@ io.on("connection", async (socket) => {
     const roomID = `call_${call._id}`;
 
     if (receiver.socket_id) {
-      io.to(receiver.socket_id).emit("incoming_audio_call", {
+      io.to(receiver.socket_id).emit("incoming_call", {
         from,
         roomID,
         call_id: call._id,
+        type,
       });
     }
 
@@ -529,7 +531,7 @@ io.on("connection", async (socket) => {
         const caller = await User.findById(callDoc.caller);
 
         if (caller?.socket_id) {
-          io.to(caller.socket_id).emit("audio_call_missed");
+          io.to(caller.socket_id).emit("call_missed", { type: call.type });
         }
 
         callTimeouts.delete(call._id.toString());
@@ -539,13 +541,13 @@ io.on("connection", async (socket) => {
     callTimeouts.set(call._id.toString(), timeout);
   });
 
-  socket.on("audio_call_accept", async ({ call_id }) => {
+  socket.on("call_accept", async ({ call_id }) => {
     const call = await Call.findById(call_id);
     if (!call || call.status !== "ringing") return;
 
     if (call.receiver.toString() !== socket.user_id.toString()) return;
 
-    // 🔥 Set to ongoing
+    // Set to ongoing
     call.status = "ongoing";
     await call.save();
 
@@ -556,15 +558,22 @@ io.on("connection", async (socket) => {
     }
 
     const caller = await User.findById(call.caller);
+    const receiver = await User.findById(call.receiver);
+
+    const payload = {
+      roomID: `call_${call_id}`,
+      type: call.type,
+    };
 
     if (caller?.socket_id) {
-      io.to(caller.socket_id).emit("audio_call_accepted", {
-        roomID: `call_${call_id}`,
-      });
+      io.to(caller.socket_id).emit("call_accepted", payload);
+    }
+    if (receiver?.socket_id) {
+      io.to(receiver.socket_id).emit("call_accepted", payload);
     }
   });
 
-  socket.on("audio_call_reject", async ({ call_id }) => {
+  socket.on("call_reject", async ({ call_id }) => {
     const call = await Call.findById(call_id);
     if (!call || call.status !== "ringing") return;
 
@@ -584,11 +593,11 @@ io.on("connection", async (socket) => {
     const caller = await User.findById(call.caller);
 
     if (caller?.socket_id) {
-      io.to(caller.socket_id).emit("audio_call_rejected");
+      io.to(caller.socket_id).emit("call_rejected", { type: call.type });
     }
   });
 
-  socket.on("audio_call_end", async ({ call_id }) => {
+  socket.on("call_end", async ({ call_id }) => {
     const call = await Call.findById(call_id);
     if (!call) return;
 
@@ -620,7 +629,7 @@ io.on("connection", async (socket) => {
           from: call.caller,
           to: call.receiver,
           type: "Call",
-          text: `Audio call (${call.duration}s)`,
+          text: `${call.type === "video" ? "Video" : "Audio"} call(${call.duration}s)`,
           createdAt: new Date(),
           status: "read",
         },
@@ -640,7 +649,7 @@ io.on("connection", async (socket) => {
     const otherUser = await User.findById(otherUserId);
 
     if (otherUser?.socket_id) {
-      io.to(otherUser.socket_id).emit("audio_call_ended");
+      io.to(otherUser.socket_id).emit("call_ended", { type: call.type });
     }
   });
 
@@ -668,7 +677,12 @@ io.on("connection", async (socket) => {
         call.status = "completed";
       }
       call.endedAt = new Date();
-      call.duration = Math.floor((call.endedAt - call.startedAt) / 1000);
+      if (call.status === "ongoing") {
+        call.duration = Math.floor((call.endedAt - call.startedAt) / 1000);
+      } else {
+        call.duration = 0;
+      }
+
       await call.save();
       await OneToOneMessage.findByIdAndUpdate(call.conversation, {
         $push: {
@@ -677,7 +691,7 @@ io.on("connection", async (socket) => {
             from: call.caller,
             to: call.receiver,
             type: "Call",
-            text: `Audio call (${call.duration}s)`,
+            text: `${call.type === "video" ? "Video" : "Audio"} call (${call.duration}s)`,
             createdAt: new Date(),
             status: "read",
           },
@@ -697,7 +711,7 @@ io.on("connection", async (socket) => {
       const otherSocket = await getSocketIdByUserId(otherUserId);
 
       if (otherSocket) {
-        io.to(otherSocket).emit("audio_call_ended");
+        io.to(otherSocket).emit("call_ended", { type: call.type });
       }
     }
 
